@@ -2,8 +2,6 @@ import streamlit as st
 import requests
 import folium
 import pandas as pd
-import streamlit as st
-from geopy.distance import geodesic
 from folium.plugins import PolyLineTextPath
 from streamlit_folium import folium_static
 from io import BytesIO
@@ -54,6 +52,25 @@ def fetch_places_data(api_key, location, radius, place_types):
     response = requests.get(endpoint, params=params)
     return response.json() if response.status_code == 200 else None
 
+# Function to get driving distance using Google Directions API
+def get_driving_distance(api_key, origin, destination):
+    endpoint = "https://maps.googleapis.com/maps/api/directions/json"
+    params = {
+        "origin": origin,
+        "destination": destination,
+        "key": api_key
+    }
+    response = requests.get(endpoint, params=params)
+    if response.status_code == 200:
+        routes = response.json().get('routes', [])
+        if routes:
+            legs = routes[0].get('legs', [])
+            if legs:
+                distance_text = legs[0]['distance']['text']
+                duration_text = legs[0]['duration']['text']
+                return distance_text, duration_text
+    return None, None
+
 # Function to create map with precinct markers
 def create_precinct_map(precincts):
     coords = list(precincts.values())[0]["coords"]
@@ -76,21 +93,23 @@ def create_places_map(places_data, center_location, precinct_name):
         for place in places_data['results']:
             lat = place['geometry']['location']['lat']
             lng = place['geometry']['location']['lng']
-            place_location = (lat, lng)
-            distance_km = geodesic(center_location, place_location).km
-            distance_miles = distance_km * 0.621371
+            driving_distance, driving_time = get_driving_distance(api_key, f"{center_location[0]},{center_location[1]}", f"{lat},{lng}")
+
             distances.append({
                 'name': place['name'],
-                'distance_miles': distance_miles,
+                'driving_distance': driving_distance,
+                'driving_time': driving_time,
                 'address': place.get('vicinity', 'Address not available'),
-                'location': place_location
+                'location': (lat, lng)
             })
 
-        distances.sort(key=lambda x: x['distance_miles'])
+        distances = [d for d in distances if d['driving_distance'] is not None]
+        distances.sort(key=lambda x: float(x['driving_distance'].split()[0].replace(',', '')))
+
         for place in distances:
             folium.Marker(
                 location=place['location'],
-                popup=f"<strong style='color:black;'>{place['name']}</strong><br><strong style='color:black;'>Distance:</strong> {place['distance_miles']:.2f} miles<br><strong style='color:black;'>Address:</strong> {place['address']}",
+                popup=f"<strong style='color:black;'>{place['name']}</strong><br><strong style='color:black;'>Driving:</strong> {place['driving_distance']} ({place['driving_time']})<br><strong style='color:black;'>Address:</strong> {place['address']}",
                 icon=folium.Icon(color='blue', icon='info-sign')
             ).add_to(map_)
 
@@ -126,7 +145,7 @@ def main():
             places_map, distances = create_places_map(places_data, data['coords'], data['name'])
             folium_static(places_map)
 
-            df = pd.DataFrame([{"Name": d['name'], "Address": d['address'], "Distance (miles)": round(d['distance_miles'], 2)} for d in distances])
+            df = pd.DataFrame([{ "Name": d['name'], "Address": d['address'], "Driving Distance": d['driving_distance'], "Driving Time": d['driving_time'] } for d in distances])
             st.dataframe(df, use_container_width=True)
 
             # Export to Excel
