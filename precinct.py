@@ -2,13 +2,14 @@ import streamlit as st
 import requests
 import folium
 import pandas as pd
+import streamlit as st
 from geopy.distance import geodesic
 from folium.plugins import PolyLineTextPath
 from streamlit_folium import folium_static
 from io import BytesIO
 
 # Define the API key (replace with your actual key)
-api_key = "AIzaSyDxN9MpYQa1o4pZanoUlRBZBDqrC-veu9U"
+api_key = st.secrets["api_keys"]["google_maps"]
 
 # County and Precinct Data
 greenville_precincts = {
